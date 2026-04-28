@@ -501,6 +501,7 @@
             state.revealed.fill(1);
             state.gameOver = true;
             setMessage("Bravo ! C'était " + state.target.name + ".", "success");
+            launchConfetti();
           } else if (result.newCells > 0) {
             setMessage(cellsToPercent(result.newCells) + "% du drapeau vient d'être révélé.", "success");
           } else {
@@ -515,6 +516,79 @@
           state.loading = false;
           render();
         }
+      }
+
+      function launchConfetti() {
+        const existingCanvas = document.querySelector(".confetti-canvas");
+        if (existingCanvas) existingCanvas.remove();
+
+        const canvas = document.createElement("canvas");
+        canvas.className = "confetti-canvas";
+        document.body.append(canvas);
+
+        const context = canvas.getContext("2d");
+        const colors = ["#0055a4", "#ffffff", "#ef4135", "#ffd100", "#0e7a45", "#ff8c00", "#7c3aed"];
+        const pieces = [];
+        const pieceCount = 180;
+        const duration = 2600;
+        const start = performance.now();
+
+        function resizeCanvas() {
+          const ratio = window.devicePixelRatio || 1;
+          canvas.width = Math.floor(window.innerWidth * ratio);
+          canvas.height = Math.floor(window.innerHeight * ratio);
+          canvas.style.width = window.innerWidth + "px";
+          canvas.style.height = window.innerHeight + "px";
+          context.setTransform(ratio, 0, 0, ratio, 0, 0);
+        }
+
+        resizeCanvas();
+        window.addEventListener("resize", resizeCanvas);
+
+        for (let i = 0; i < pieceCount; i += 1) {
+          pieces.push({
+            x: Math.random() * window.innerWidth,
+            y: -20 - Math.random() * window.innerHeight * 0.35,
+            size: 6 + Math.random() * 9,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            velocityX: -3 + Math.random() * 6,
+            velocityY: 3 + Math.random() * 5,
+            rotation: Math.random() * Math.PI * 2,
+            rotationSpeed: -0.18 + Math.random() * 0.36,
+            wobble: Math.random() * Math.PI * 2,
+          });
+        }
+
+        function drawFrame(now) {
+          const elapsed = now - start;
+          const progress = Math.min(elapsed / duration, 1);
+
+          context.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+          for (const piece of pieces) {
+            piece.x += piece.velocityX + Math.sin(piece.wobble) * 0.8;
+            piece.y += piece.velocityY + progress * 2.2;
+            piece.rotation += piece.rotationSpeed;
+            piece.wobble += 0.08;
+
+            context.save();
+            context.globalAlpha = 1 - Math.max(0, progress - 0.72) / 0.28;
+            context.translate(piece.x, piece.y);
+            context.rotate(piece.rotation);
+            context.fillStyle = piece.color;
+            context.fillRect(-piece.size / 2, -piece.size / 2, piece.size, piece.size * 0.58);
+            context.restore();
+          }
+
+          if (progress < 1) {
+            requestAnimationFrame(drawFrame);
+          } else {
+            window.removeEventListener("resize", resizeCanvas);
+            canvas.remove();
+          }
+        }
+
+        requestAnimationFrame(drawFrame);
       }
 
       function transposeAndCompareMatrices(targetMatrix, guessMatrix) {
@@ -622,8 +696,8 @@
 
         const country = pickRandom(candidates);
         input.value = country.name;
-        hideCountrySuggestions(suggestionsBox);
         input.focus();
+        hideCountrySuggestions(suggestionsBox);
       }
 
       function getCountrySuggestions(query, limit = 8) {
