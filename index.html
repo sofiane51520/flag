@@ -85,6 +85,43 @@
       align-items: center;
     }
 
+    .suggestions {
+      position: absolute;
+      z-index: 20;
+      top: calc(100% + 8px);
+      left: 0;
+      right: 0;
+      display: none;
+      max-height: 260px;
+      overflow: auto;
+      padding: 8px;
+      border: 1px solid #c7d1e2;
+      border-radius: 16px;
+      background: white;
+      box-shadow: 0 18px 40px rgba(26, 42, 68, 0.18);
+    }
+
+    .suggestions.is-visible {
+      display: grid;
+      gap: 6px;
+    }
+
+    .suggestion-item {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: transparent;
+      color: #172033;
+      text-align: left;
+      font-weight: 800;
+    }
+
+    .suggestion-item:hover,
+    .suggestion-item:focus {
+      background: #edf3fb;
+      color: #0055a4;
+    }
+
     input {
       width: 100%;
       min-width: 0;
@@ -333,7 +370,13 @@
         const data = await response.json();
 
         return data
-          .filter((country) => country.name && country.flags && (country.flags.svg || country.flags.png))
+          .filter((country) => {
+            const svg = country.flags && country.flags.svg;
+            const png = country.flags && country.flags.png;
+            const hasValidSvg = typeof svg === "string" && svg && !svg.includes("undefined");
+            const hasValidPng = typeof png === "string" && png && !png.includes("undefined");
+            return country.name && country.flags && (hasValidSvg || hasValidPng);
+          })
           .map((country) => {
             const english = country.name.common;
             const french = country.translations && country.translations.fra
@@ -356,7 +399,7 @@
                 compactName(english),
                 compactName(country.name.official),
               ]),
-              flagUrl: country.flags.svg || country.flags.png,
+              flagUrl: getValidFlagUrl(country),
               capital: Array.isArray(country.capital) ? country.capital[0] : "",
               region: country.region || "",
               subregion: country.subregion || "",
@@ -406,7 +449,26 @@
         return country;
       }
 
+      function getValidFlagUrl(country) {
+        const svg = country.flags && country.flags.svg;
+        const png = country.flags && country.flags.png;
+
+        if (typeof svg === "string" && svg && !svg.includes("undefined")) {
+          return svg;
+        }
+
+        if (typeof png === "string" && png && !png.includes("undefined")) {
+          return png;
+        }
+
+        return "";
+      }
+
       async function loadFlagAsImageData(url) {
+        if (!url || url.includes("undefined")) {
+          throw new Error("URL de drapeau invalide : " + url);
+        }
+
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -668,7 +730,7 @@
           .map(([colorId]) => PALETTE_BY_ID.get(colorId).name);
       }
 
-      function fillRandomCountryInput(input) {
+      function fillRandomCountryInput(input, suggestionsBox) {
         if (state.loading || state.gameOver || state.countries.length === 0) return;
 
         const alreadyTried = new Set(state.guesses.map((guess) => guess.code));
@@ -682,7 +744,81 @@
 
         const country = pickRandom(candidates);
         input.value = country.name;
+        hideCountrySuggestions(suggestionsBox);
         input.focus();
+      }
+
+      function getCountrySuggestions(query, limit = 8) {
+        const normalizedQuery = normalizeName(query);
+        const compactQuery = compactName(query);
+
+        if (!normalizedQuery) return [];
+
+        return state.countries
+          .map((country) => {
+            const normalizedName = normalizeName(country.name);
+            const compactCountryName = compactName(country.name);
+            const aliasMatch = country.aliases.some((alias) => {
+              const normalizedAlias = normalizeName(alias);
+              const compactAlias = compactName(alias);
+
+              return (
+                normalizedAlias.includes(normalizedQuery) ||
+                compactAlias.includes(compactQuery)
+              );
+            });
+
+            if (!aliasMatch) return null;
+
+            const startsWithScore = normalizedName.startsWith(normalizedQuery) || compactCountryName.startsWith(compactQuery) ? 0 : 1;
+            return { country, startsWithScore, normalizedName };
+          })
+          .filter(Boolean)
+          .sort((a, b) => {
+            if (a.startsWithScore !== b.startsWithScore) {
+              return a.startsWithScore - b.startsWithScore;
+            }
+            return a.normalizedName.localeCompare(b.normalizedName, "fr");
+          })
+          .slice(0, limit)
+          .map((item) => item.country);
+      }
+
+      function updateCountrySuggestions(input, suggestionsBox) {
+        const suggestions = getCountrySuggestions(input.value);
+        suggestionsBox.innerHTML = "";
+
+        if (state.loading || state.gameOver || suggestions.length === 0) {
+          hideCountrySuggestions(suggestionsBox);
+          return;
+        }
+
+        for (const country of suggestions) {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.className = "suggestion-item";
+          item.textContent = country.name;
+
+          item.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+          });
+
+          item.addEventListener("click", () => {
+            input.value = country.name;
+            hideCountrySuggestions(suggestionsBox);
+            input.focus();
+          });
+
+          suggestionsBox.append(item);
+        }
+
+        suggestionsBox.classList.add("is-visible");
+      }
+
+      function hideCountrySuggestions(suggestionsBox) {
+        if (!suggestionsBox) return;
+        suggestionsBox.classList.remove("is-visible");
+        suggestionsBox.innerHTML = "";
       }
 
       function cellsToPercent(count) {
@@ -767,8 +903,17 @@
         input.type = "text";
         input.placeholder = "Exemple : Algerie";
         input.disabled = state.loading || state.gameOver;
-        input.setAttribute("list", "countries");
         input.autocomplete = "off";
+
+        const suggestionsBox = document.createElement("div");
+        suggestionsBox.className = "suggestions";
+        suggestionsBox.setAttribute("role", "listbox");
+
+        input.addEventListener("input", () => updateCountrySuggestions(input, suggestionsBox));
+        input.addEventListener("focus", () => updateCountrySuggestions(input, suggestionsBox));
+        input.addEventListener("blur", () => {
+          window.setTimeout(() => hideCountrySuggestions(suggestionsBox), 120);
+        });
 
         const diceButton = document.createElement("button");
         diceButton.className = "dice-button";
@@ -777,9 +922,9 @@
         diceButton.setAttribute("aria-label", "Proposer un pays au hasard");
         diceButton.textContent = "🎲";
         diceButton.disabled = state.loading || state.gameOver;
-        diceButton.addEventListener("click", () => fillRandomCountryInput(input));
+        diceButton.addEventListener("click", () => fillRandomCountryInput(input, suggestionsBox));
 
-        inputWrap.append(input, diceButton);
+        inputWrap.append(input, diceButton, suggestionsBox);
 
         const button = document.createElement("button");
         button.type = "submit";
@@ -805,13 +950,6 @@
 
         helperButtons.append(hintButton, partialButton);
 
-        const datalist = document.createElement("datalist");
-        datalist.id = "countries";
-        for (const country of state.countries) {
-          const option = document.createElement("option");
-          option.value = country.name;
-          datalist.append(option);
-        }
 
         const message = document.createElement("p");
         message.id = "message";
@@ -830,7 +968,7 @@
           <span>${state.partialLetters} lettre${state.partialLetters > 1 ? "s" : ""} révélée${state.partialLetters > 1 ? "s" : ""}</span>
         `;
 
-        panel.append(title, intro, form, helperButtons, datalist, message, stats);
+        panel.append(title, intro, form, helperButtons, message, stats);
 
         const flagPanel = document.createElement("div");
         flagPanel.className = "card";
