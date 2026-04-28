@@ -117,7 +117,8 @@
     }
 
     .suggestion-item:hover,
-    .suggestion-item:focus {
+    .suggestion-item:focus,
+    .suggestion-item.is-active {
       background: #edf3fb;
       color: #0055a4;
     }
@@ -787,6 +788,7 @@
       function updateCountrySuggestions(input, suggestionsBox) {
         const suggestions = getCountrySuggestions(input.value);
         suggestionsBox.innerHTML = "";
+        suggestionsBox.dataset.activeIndex = "-1";
 
         if (state.loading || state.gameOver || suggestions.length === 0) {
           hideCountrySuggestions(suggestionsBox);
@@ -798,15 +800,15 @@
           item.type = "button";
           item.className = "suggestion-item";
           item.textContent = country.name;
+          item.dataset.value = country.name;
+          item.setAttribute("role", "option");
 
           item.addEventListener("mousedown", (event) => {
             event.preventDefault();
           });
 
           item.addEventListener("click", () => {
-            input.value = country.name;
-            hideCountrySuggestions(suggestionsBox);
-            input.focus();
+            selectSuggestion(input, suggestionsBox, country.name);
           });
 
           suggestionsBox.append(item);
@@ -815,9 +817,72 @@
         suggestionsBox.classList.add("is-visible");
       }
 
+      function handleSuggestionKeyboard(event, input, suggestionsBox) {
+        const isNavigationKey = ["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key);
+        if (!isNavigationKey) return;
+
+        const suggestionsAreVisible = suggestionsBox.classList.contains("is-visible");
+
+        if (event.key === "Escape") {
+          hideCountrySuggestions(suggestionsBox);
+          return;
+        }
+
+        if (!suggestionsAreVisible && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+          updateCountrySuggestions(input, suggestionsBox);
+        }
+
+        const items = [...suggestionsBox.querySelectorAll(".suggestion-item")];
+        if (items.length === 0) return;
+
+        let activeIndex = Number(suggestionsBox.dataset.activeIndex || "-1");
+
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          activeIndex = activeIndex < items.length - 1 ? activeIndex + 1 : 0;
+          setActiveSuggestion(suggestionsBox, activeIndex);
+          return;
+        }
+
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          activeIndex = activeIndex > 0 ? activeIndex - 1 : items.length - 1;
+          setActiveSuggestion(suggestionsBox, activeIndex);
+          return;
+        }
+
+        if (event.key === "Enter" && suggestionsAreVisible && activeIndex >= 0) {
+          event.preventDefault();
+          selectSuggestion(input, suggestionsBox, items[activeIndex].dataset.value);
+        }
+      }
+
+      function setActiveSuggestion(suggestionsBox, index) {
+        const items = [...suggestionsBox.querySelectorAll(".suggestion-item")];
+        if (items.length === 0) return;
+
+        const safeIndex = Math.max(0, Math.min(index, items.length - 1));
+        suggestionsBox.dataset.activeIndex = String(safeIndex);
+
+        items.forEach((item, itemIndex) => {
+          const isActive = itemIndex === safeIndex;
+          item.classList.toggle("is-active", isActive);
+          item.setAttribute("aria-selected", isActive ? "true" : "false");
+        });
+
+        items[safeIndex].scrollIntoView({ block: "nearest" });
+      }
+
+      function selectSuggestion(input, suggestionsBox, value) {
+        input.value = value;
+        hideCountrySuggestions(suggestionsBox);
+        input.focus();
+      }
+
       function hideCountrySuggestions(suggestionsBox) {
         if (!suggestionsBox) return;
         suggestionsBox.classList.remove("is-visible");
+        suggestionsBox.dataset.activeIndex = "-1";
         suggestionsBox.innerHTML = "";
       }
 
@@ -910,6 +975,7 @@
         suggestionsBox.setAttribute("role", "listbox");
 
         input.addEventListener("input", () => updateCountrySuggestions(input, suggestionsBox));
+        input.addEventListener("keydown", (event) => handleSuggestionKeyboard(event, input, suggestionsBox));
         input.addEventListener("focus", () => updateCountrySuggestions(input, suggestionsBox));
         input.addEventListener("blur", () => {
           window.setTimeout(() => hideCountrySuggestions(suggestionsBox), 120);
