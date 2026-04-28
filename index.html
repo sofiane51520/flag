@@ -309,14 +309,22 @@
         } catch (error) {
           console.error(error);
           state.loading = false;
-          state.message = "Impossible de charger countries.json. Vérifie que le fichier est bien à côté de index.html.";
+          state.message = buildDataLoadErrorMessage(error);
           state.messageType = "error";
           render();
         }
       }
 
+      function buildDataLoadErrorMessage(error) {
+        if (window.location.protocol === "file:") {
+          return "Erreur CORS : le fichier index.html est ouvert en local avec file://. Lance un serveur local ou déploie sur GitHub Pages pour charger countries.json.";
+        }
+
+        return "Impossible de charger countries.json. Vérifie que countries.json est bien à côté de index.html et que le nom du fichier est exact.";
+      }
+
       async function fetchCountries() {
-        const response = await fetch(DATA_URL);
+        const response = await fetch(DATA_URL, { cache: "no-store" });
 
         if (!response.ok) {
           throw new Error("countries.json a répondu avec le statut " + response.status);
