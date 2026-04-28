@@ -980,7 +980,7 @@
           <span>${state.partialLetters} lettre${state.partialLetters > 1 ? "s" : ""} révélée${state.partialLetters > 1 ? "s" : ""}</span>
         `;
 
-        panel.append(title, intro, form, helperButtons, message, stats);
+        panel.append(title, form, helperButtons, message, stats);
 
         const flagPanel = document.createElement("div");
         flagPanel.className = "card";
