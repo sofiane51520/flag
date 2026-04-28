@@ -612,8 +612,8 @@
 
         const country = pickRandom(candidates);
         input.value = country.name;
-        hideCountrySuggestions(suggestionsBox);
         input.focus();
+        hideCountrySuggestions(suggestionsBox);
       }
 
       function getCountrySuggestions(query, limit = 8) {
