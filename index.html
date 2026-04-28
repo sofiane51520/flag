@@ -23,10 +23,16 @@
       padding: 40px 0;
     }
 
-    .top,
-    .bottom {
+    .top {
       display: grid;
       grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .bottom {
+      display: grid;
+      grid-template-columns: 1fr;
       gap: 24px;
       margin-bottom: 24px;
     }
@@ -71,12 +77,20 @@
       margin-top: 20px;
     }
 
-    input {
+    .input-wrap {
       flex: 1;
+      min-width: 0;
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    input {
+      width: 100%;
       min-width: 0;
       border: 1px solid #c7d1e2;
       border-radius: 16px;
-      padding: 14px 16px;
+      padding: 14px 54px 14px 16px;
       font: inherit;
       outline: none;
     }
@@ -102,6 +116,32 @@
       cursor: not-allowed;
     }
 
+    .dice-button {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border-radius: 12px;
+      background: #edf3fb;
+      color: #172033;
+      font-size: 1.25rem;
+      line-height: 1;
+    }
+
+    .helper-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .helper-buttons button {
+      background: #0055a4;
+    }
+
     .secondary {
       width: 100%;
       margin-top: 16px;
@@ -119,6 +159,10 @@
 
     #message[data-type="error"] {
       color: #c6283a;
+    }
+
+    #message[data-type="hint"] {
+      color: #0055a4;
     }
 
     .stats {
@@ -215,7 +259,7 @@
     (() => {
       "use strict";
 
-      const API_URL = "https://restcountries.com/v3.1/all?fields=name,translations,flags,cca2";
+      const DATA_URL = "./countries.json";
       const MATRIX_WIDTH = 180;
       const MATRIX_HEIGHT = 120;
       const MATRIX_SIZE = MATRIX_WIDTH * MATRIX_HEIGHT;
@@ -236,15 +280,19 @@
         { id: 12, name: "violet", rgb: [105, 52, 150] },
       ];
 
+      const PALETTE_BY_ID = new Map(PALETTE.map((color) => [color.id, color]));
+
       const state = {
         countries: [],
         target: null,
         revealed: new Uint8Array(MATRIX_SIZE),
         guesses: [],
-        message: "Chargement des drapeaux depuis internet...",
+        message: "Chargement des données depuis countries.json...", 
         messageType: "neutral",
         loading: true,
         gameOver: false,
+        hintsUsed: 0,
+        partialLetters: 0,
       };
 
       const cache = new Map();
@@ -261,17 +309,17 @@
         } catch (error) {
           console.error(error);
           state.loading = false;
-          state.message = "Impossible de charger les drapeaux. Vérifie ta connexion ou la disponibilité de l'API.";
+          state.message = "Impossible de charger countries.json. Vérifie que le fichier est bien à côté de index.html.";
           state.messageType = "error";
           render();
         }
       }
 
       async function fetchCountries() {
-        const response = await fetch(API_URL);
+        const response = await fetch(DATA_URL);
 
         if (!response.ok) {
-          throw new Error("REST Countries a répondu avec le statut " + response.status);
+          throw new Error("countries.json a répondu avec le statut " + response.status);
         }
 
         const data = await response.json();
@@ -288,8 +336,23 @@
               code: country.cca2 || english,
               name: french,
               englishName: english,
-              aliases: uniqueList([french, english, country.name.official]),
+              officialName: country.name.official,
+              aliases: uniqueList([
+                french,
+                english,
+                country.name.official,
+                normalizeName(french),
+                normalizeName(english),
+                normalizeName(country.name.official),
+                compactName(french),
+                compactName(english),
+                compactName(country.name.official),
+              ]),
               flagUrl: country.flags.svg || country.flags.png,
+              capital: Array.isArray(country.capital) ? country.capital[0] : "",
+              region: country.region || "",
+              subregion: country.subregion || "",
+              continent: Array.isArray(country.continents) ? country.continents[0] : "",
             };
           })
           .sort((a, b) => a.name.localeCompare(b.name, "fr"));
@@ -301,6 +364,8 @@
         state.messageType = "neutral";
         state.gameOver = false;
         state.guesses = [];
+        state.hintsUsed = 0;
+        state.partialLetters = 0;
         state.revealed = new Uint8Array(MATRIX_SIZE);
         render();
 
@@ -398,9 +463,12 @@
 
       function findCountry(input) {
         const wanted = normalizeName(input);
+        const compactWanted = compactName(input);
 
         return state.countries.find((country) => {
-          return country.aliases.some((alias) => normalizeName(alias) === wanted);
+          return country.aliases.some((alias) => {
+            return normalizeName(alias) === wanted || compactName(alias) === compactWanted;
+          });
         });
       }
 
@@ -417,10 +485,16 @@
           .replaceAll("-", " ")
           .replaceAll("'", " ")
           .replaceAll("’", " ")
+          .replaceAll(".", " ")
+          .replaceAll(",", " ")
           .split(" ")
           .filter(Boolean)
           .join(" ")
           .trim();
+      }
+
+      function compactName(value) {
+        return normalizeName(value).replaceAll(" ", "");
       }
 
       function uniqueList(items) {
@@ -445,7 +519,7 @@
         const guess = findCountry(value);
 
         if (!guess) {
-          setMessage("Pays inconnu. Essaie le nom français ou anglais.", "error");
+          setMessage("Pays inconnu. Les accents ne comptent pas : tu peux écrire Algerie au lieu d'Algérie.", "error");
           render();
           return;
         }
@@ -520,6 +594,89 @@
         return { newCells, totalMatches };
       }
 
+      function giveHint() {
+        if (!state.target || state.loading || state.gameOver) return;
+
+        const hintNumber = state.hintsUsed % 4;
+        let hint = "";
+
+        if (hintNumber === 0) {
+          const area = state.target.continent || state.target.region || "une zone non renseignée";
+          hint = "Indice : ce pays est situé en " + area + ".";
+        } else if (hintNumber === 1) {
+          const letterCount = compactName(state.target.name).length;
+          const wordCount = normalizeName(state.target.name).split(" ").filter(Boolean).length;
+          hint = "Indice : le nom contient " + letterCount + " lettres et " + wordCount + " mot" + (wordCount > 1 ? "s" : "") + ".";
+        } else if (hintNumber === 2) {
+          hint = "Indice : couleurs principales du drapeau : " + getDominantPaletteNames(state.target, 3).join(", ") + ".";
+        } else {
+          hint = state.target.capital
+            ? "Indice : sa capitale est " + state.target.capital + "."
+            : "Indice : le nom officiel est proche de son nom courant.";
+        }
+
+        state.hintsUsed += 1;
+        setMessage(hint, "hint");
+        render();
+      }
+
+      function revealPartialName() {
+        if (!state.target || state.loading || state.gameOver) return;
+
+        const maxLetters = compactName(state.target.name).length;
+        state.partialLetters = Math.min(maxLetters, state.partialLetters + 1);
+
+        setMessage("Premières lettres : " + buildPartialCountryName(state.target.name, state.partialLetters), "hint");
+        render();
+      }
+
+      function buildPartialCountryName(name, revealedLetters) {
+        const normalized = normalizeName(name);
+        let count = 0;
+        let output = "";
+
+        for (const char of normalized) {
+          if (char === " ") {
+            output += " ";
+          } else {
+            count += 1;
+            output += count <= revealedLetters ? char.toUpperCase() : "•";
+          }
+        }
+
+        return output;
+      }
+
+      function getDominantPaletteNames(country, limit) {
+        const counts = new Map();
+
+        for (const colorId of country.matrix) {
+          counts.set(colorId, (counts.get(colorId) || 0) + 1);
+        }
+
+        return [...counts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, limit)
+          .map(([colorId]) => PALETTE_BY_ID.get(colorId).name);
+      }
+
+      function fillRandomCountryInput(input) {
+        if (state.loading || state.gameOver || state.countries.length === 0) return;
+
+        const alreadyTried = new Set(state.guesses.map((guess) => guess.code));
+        let candidates = state.countries.filter((country) => {
+          return country.code !== state.target.code && !alreadyTried.has(country.code);
+        });
+
+        if (candidates.length === 0) {
+          candidates = state.countries.filter((country) => country.code !== state.target.code);
+        }
+
+        const country = pickRandom(candidates);
+        input.value = country.name;
+        input.focus();
+      }
+
       function cellsToPercent(count) {
         return Math.round((count / MATRIX_SIZE) * 10000) / 100;
       }
@@ -588,26 +745,57 @@
 
         const intro = document.createElement("p");
         intro.className = "muted";
-        intro.textContent = "Les drapeaux viennent d'internet, sont convertis en matrices, puis leurs couleurs sont normalisées en quelques teintes avant comparaison.";
+        intro.textContent = "Les données des pays viennent du fichier local countries.json. Les drapeaux sont convertis en matrices, puis leurs couleurs sont normalisées avant comparaison. Les accents ne sont pas pris en compte.";
 
         const form = document.createElement("form");
         form.className = "form";
         form.addEventListener("submit", submitGuess);
 
+        const inputWrap = document.createElement("div");
+        inputWrap.className = "input-wrap";
+
         const input = document.createElement("input");
         input.name = "country";
         input.type = "text";
-        input.placeholder = "Exemple : Algérie";
+        input.placeholder = "Exemple : Algerie";
         input.disabled = state.loading || state.gameOver;
         input.setAttribute("list", "countries");
         input.autocomplete = "off";
+
+        const diceButton = document.createElement("button");
+        diceButton.className = "dice-button";
+        diceButton.type = "button";
+        diceButton.title = "Proposer un pays au hasard";
+        diceButton.setAttribute("aria-label", "Proposer un pays au hasard");
+        diceButton.textContent = "🎲";
+        diceButton.disabled = state.loading || state.gameOver;
+        diceButton.addEventListener("click", () => fillRandomCountryInput(input));
+
+        inputWrap.append(input, diceButton);
 
         const button = document.createElement("button");
         button.type = "submit";
         button.textContent = state.loading ? "Chargement..." : "Essayer";
         button.disabled = state.loading || state.gameOver;
 
-        form.append(input, button);
+        form.append(inputWrap, button);
+
+        const helperButtons = document.createElement("div");
+        helperButtons.className = "helper-buttons";
+
+        const hintButton = document.createElement("button");
+        hintButton.type = "button";
+        hintButton.textContent = "Indice";
+        hintButton.disabled = state.loading || state.gameOver || !state.target;
+        hintButton.addEventListener("click", giveHint);
+
+        const partialButton = document.createElement("button");
+        partialButton.type = "button";
+        partialButton.textContent = "Révéler partiellement";
+        partialButton.disabled = state.loading || state.gameOver || !state.target;
+        partialButton.addEventListener("click", revealPartialName);
+
+        helperButtons.append(hintButton, partialButton);
 
         const datalist = document.createElement("datalist");
         datalist.id = "countries";
@@ -630,9 +818,11 @@
           <span>${revealedCount.toLocaleString("fr-FR")} cellules révélées</span>
           <span>${cellsToPercent(revealedCount)}% visible</span>
           <span>${state.guesses.length} essai${state.guesses.length > 1 ? "s" : ""}</span>
+          <span>${state.hintsUsed} indice${state.hintsUsed > 1 ? "s" : ""}</span>
+          <span>${state.partialLetters} lettre${state.partialLetters > 1 ? "s" : ""} révélée${state.partialLetters > 1 ? "s" : ""}</span>
         `;
 
-        panel.append(title, intro, form, datalist, message, stats);
+        panel.append(title, intro, form, helperButtons, datalist, message, stats);
 
         const flagPanel = document.createElement("div");
         flagPanel.className = "card";
@@ -648,28 +838,18 @@
 
         flagPanel.append(flagTitle, flagCanvas);
 
-        if (state.gameOver) {
-          const reset = document.createElement("button");
-          reset.className = "secondary";
-          reset.type = "button";
-          reset.textContent = "Nouvelle partie";
-          reset.addEventListener("click", newGame);
-          flagPanel.append(reset);
-        }
+        const reset = document.createElement("button");
+        reset.className = "secondary";
+        reset.type = "button";
+        reset.textContent = "Nouvelle partie";
+        reset.disabled = state.loading || state.countries.length === 0;
+        reset.addEventListener("click", newGame);
+        flagPanel.append(reset);
 
         top.append(panel, flagPanel);
 
         const bottom = document.createElement("section");
         bottom.className = "bottom";
-
-        const method = document.createElement("div");
-        method.className = "card";
-        method.innerHTML = `
-          <h2>Comparaison des matrices</h2>
-          <p>Chaque drapeau est réduit en matrice ${MATRIX_WIDTH} × ${MATRIX_HEIGHT}. Chaque cellule contient seulement l'id d'une teinte normalisée : rouge, bleu, vert, blanc, jaune, noir, etc.</p>
-          <p>La comparaison se fait ensuite par coordonnées : si secret[y][x] vaut la même teinte que essai[y][x], cette position est révélée.</p>
-          <p class="note">La normalisation évite que deux rouges presque identiques soient considérés comme différents à cause de l'anticrénelage ou des variantes officielles.</p>
-        `;
 
         const history = document.createElement("div");
         history.className = "card";
@@ -678,7 +858,7 @@
         historyTitle.textContent = "Essais";
 
         history.append(historyTitle, renderHistory());
-        bottom.append(method, history);
+        bottom.append(history);
 
         shell.append(top, bottom);
         app.append(shell);
