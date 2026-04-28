@@ -1,0 +1,727 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Devine le drapeau</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #f8fbff, #e7edf7);
+      color: #172033;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    .shell {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 40px 0;
+    }
+
+    .top,
+    .bottom {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(120, 135, 160, 0.22);
+      border-radius: 28px;
+      padding: 26px;
+      box-shadow: 0 18px 54px rgba(26, 42, 68, 0.1);
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(2.1rem, 5vw, 4.2rem);
+      letter-spacing: -0.06em;
+      line-height: 0.95;
+    }
+
+    h2 {
+      margin: 0 0 16px;
+    }
+
+    p {
+      line-height: 1.65;
+    }
+
+    .muted,
+    .note {
+      color: #5c687a;
+    }
+
+    .note {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: #f1f5fb;
+    }
+
+    .form {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    input {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid #c7d1e2;
+      border-radius: 16px;
+      padding: 14px 16px;
+      font: inherit;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: #0055a4;
+      box-shadow: 0 0 0 4px rgba(0, 85, 164, 0.12);
+    }
+
+    button {
+      border: 0;
+      border-radius: 16px;
+      padding: 14px 18px;
+      background: #172033;
+      color: white;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .secondary {
+      width: 100%;
+      margin-top: 16px;
+      background: #0055a4;
+    }
+
+    #message {
+      font-weight: 800;
+      min-height: 28px;
+    }
+
+    #message[data-type="success"] {
+      color: #0e7a45;
+    }
+
+    #message[data-type="error"] {
+      color: #c6283a;
+    }
+
+    .stats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .stats span {
+      border-radius: 999px;
+      background: #edf3fb;
+      padding: 8px 12px;
+      color: #465469;
+      font-weight: 800;
+      font-size: 0.9rem;
+    }
+
+    .flag {
+      display: block;
+      width: 100%;
+      aspect-ratio: 3 / 2;
+      border-radius: 22px;
+      border: 4px solid white;
+      background: white;
+      box-shadow: 0 12px 28px rgba(30, 46, 74, 0.16);
+      image-rendering: pixelated;
+    }
+
+    .small {
+      width: 104px;
+      border-radius: 12px;
+      border-width: 2px;
+      flex: 0 0 auto;
+    }
+
+    .history {
+      display: grid;
+      gap: 12px;
+      max-height: 500px;
+      overflow: auto;
+    }
+
+    .guess {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      padding: 12px;
+      border: 1px solid #e1e8f2;
+      border-radius: 18px;
+      background: #fbfcff;
+    }
+
+    .guess div {
+      display: grid;
+      gap: 7px;
+    }
+
+    .guess small {
+      color: #667386;
+    }
+
+    .badge {
+      width: fit-content;
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: #edf1f7;
+      color: #657184;
+      font-size: 0.82rem;
+      font-weight: 900;
+    }
+
+    .badge.good {
+      background: #ddf7ea;
+      color: #107447;
+    }
+
+    @media (max-width: 820px) {
+      .top,
+      .bottom {
+        grid-template-columns: 1fr;
+      }
+
+      .form {
+        display: grid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const API_URL = "https://restcountries.com/v3.1/all?fields=name,translations,flags,cca2";
+      const MATRIX_WIDTH = 180;
+      const MATRIX_HEIGHT = 120;
+      const MATRIX_SIZE = MATRIX_WIDTH * MATRIX_HEIGHT;
+
+      const PALETTE = [
+        { id: 0, name: "noir", rgb: [12, 12, 12] },
+        { id: 1, name: "gris", rgb: [120, 120, 120] },
+        { id: 2, name: "blanc", rgb: [245, 245, 245] },
+        { id: 3, name: "rouge", rgb: [210, 28, 42] },
+        { id: 4, name: "rouge foncé", rgb: [145, 0, 28] },
+        { id: 5, name: "orange", rgb: [245, 128, 32] },
+        { id: 6, name: "jaune", rgb: [252, 210, 32] },
+        { id: 7, name: "vert", rgb: [0, 145, 82] },
+        { id: 8, name: "vert foncé", rgb: [0, 92, 62] },
+        { id: 9, name: "bleu", rgb: [0, 82, 180] },
+        { id: 10, name: "bleu foncé", rgb: [0, 35, 105] },
+        { id: 11, name: "bleu clair", rgb: [80, 165, 220] },
+        { id: 12, name: "violet", rgb: [105, 52, 150] },
+      ];
+
+      const state = {
+        countries: [],
+        target: null,
+        revealed: new Uint8Array(MATRIX_SIZE),
+        guesses: [],
+        message: "Chargement des drapeaux depuis internet...",
+        messageType: "neutral",
+        loading: true,
+        gameOver: false,
+      };
+
+      const cache = new Map();
+      const app = document.querySelector("#app");
+
+      start();
+
+      async function start() {
+        render();
+
+        try {
+          state.countries = await fetchCountries();
+          await newGame();
+        } catch (error) {
+          console.error(error);
+          state.loading = false;
+          state.message = "Impossible de charger les drapeaux. Vérifie ta connexion ou la disponibilité de l'API.";
+          state.messageType = "error";
+          render();
+        }
+      }
+
+      async function fetchCountries() {
+        const response = await fetch(API_URL);
+
+        if (!response.ok) {
+          throw new Error("REST Countries a répondu avec le statut " + response.status);
+        }
+
+        const data = await response.json();
+
+        return data
+          .filter((country) => country.name && country.flags && (country.flags.svg || country.flags.png))
+          .map((country) => {
+            const english = country.name.common;
+            const french = country.translations && country.translations.fra
+              ? country.translations.fra.common
+              : english;
+
+            return {
+              code: country.cca2 || english,
+              name: french,
+              englishName: english,
+              aliases: uniqueList([french, english, country.name.official]),
+              flagUrl: country.flags.svg || country.flags.png,
+            };
+          })
+          .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+      }
+
+      async function newGame() {
+        state.loading = true;
+        state.message = "Préparation du drapeau secret...";
+        state.messageType = "neutral";
+        state.gameOver = false;
+        state.guesses = [];
+        state.revealed = new Uint8Array(MATRIX_SIZE);
+        render();
+
+        state.target = pickRandom(state.countries);
+        await ensureMatrix(state.target);
+
+        state.loading = false;
+        state.message = "Propose un pays.";
+        render();
+      }
+
+      function pickRandom(items) {
+        return items[Math.floor(Math.random() * items.length)];
+      }
+
+      async function ensureMatrix(country) {
+        if (cache.has(country.code)) {
+          const cached = cache.get(country.code);
+          country.matrix = cached.matrix;
+          country.imageData = cached.imageData;
+          return country;
+        }
+
+        const imageData = await loadFlagAsImageData(country.flagUrl);
+        const matrix = normalizeImageDataToMatrix(imageData);
+
+        cache.set(country.code, { matrix, imageData });
+        country.matrix = matrix;
+        country.imageData = imageData;
+        return country;
+      }
+
+      async function loadFlagAsImageData(url) {
+        const response = await fetch(url);
+
+        if (!response.ok) {
+          throw new Error("Drapeau introuvable : " + url);
+        }
+
+        const blob = await response.blob();
+        const image = await loadImageFromBlob(blob);
+        const canvas = document.createElement("canvas");
+        canvas.width = MATRIX_WIDTH;
+        canvas.height = MATRIX_HEIGHT;
+
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        context.fillStyle = "white";
+        context.fillRect(0, 0, MATRIX_WIDTH, MATRIX_HEIGHT);
+        context.drawImage(image, 0, 0, MATRIX_WIDTH, MATRIX_HEIGHT);
+
+        URL.revokeObjectURL(image.src);
+
+        return context.getImageData(0, 0, MATRIX_WIDTH, MATRIX_HEIGHT);
+      }
+
+      function loadImageFromBlob(blob) {
+        return new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error("Image de drapeau impossible à lire"));
+          image.src = URL.createObjectURL(blob);
+        });
+      }
+
+      function normalizeImageDataToMatrix(imageData) {
+        const matrix = new Uint8Array(MATRIX_SIZE);
+        const data = imageData.data;
+
+        for (let i = 0; i < MATRIX_SIZE; i += 1) {
+          const offset = i * 4;
+          matrix[i] = nearestPaletteColorId(data[offset], data[offset + 1], data[offset + 2]);
+        }
+
+        return matrix;
+      }
+
+      function nearestPaletteColorId(r, g, b) {
+        let bestId = 0;
+        let bestDistance = Infinity;
+
+        for (const color of PALETTE) {
+          const dr = r - color.rgb[0];
+          const dg = g - color.rgb[1];
+          const db = b - color.rgb[2];
+          const distance = dr * dr + dg * dg + db * db;
+
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            bestId = color.id;
+          }
+        }
+
+        return bestId;
+      }
+
+      function findCountry(input) {
+        const wanted = normalizeName(input);
+
+        return state.countries.find((country) => {
+          return country.aliases.some((alias) => normalizeName(alias) === wanted);
+        });
+      }
+
+      function normalizeName(value) {
+        return String(value || "")
+          .toLowerCase()
+          .normalize("NFD")
+          .split("")
+          .filter((char) => {
+            const code = char.charCodeAt(0);
+            return code < 768 || code > 879;
+          })
+          .join("")
+          .replaceAll("-", " ")
+          .replaceAll("'", " ")
+          .replaceAll("’", " ")
+          .split(" ")
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+      }
+
+      function uniqueList(items) {
+        return [...new Set(items.filter(Boolean))];
+      }
+
+      async function submitGuess(event) {
+        event.preventDefault();
+
+        if (state.loading || state.gameOver) return;
+
+        const form = event.currentTarget;
+        const input = form.elements.country;
+        const value = input.value.trim();
+
+        if (!value) {
+          setMessage("Entre le nom d'un pays.", "error");
+          render();
+          return;
+        }
+
+        const guess = findCountry(value);
+
+        if (!guess) {
+          setMessage("Pays inconnu. Essaie le nom français ou anglais.", "error");
+          render();
+          return;
+        }
+
+        if (state.guesses.some((item) => item.code === guess.code)) {
+          setMessage("Tu as déjà proposé ce pays.", "error");
+          input.value = "";
+          render();
+          return;
+        }
+
+        try {
+          state.loading = true;
+          state.message = "Chargement et normalisation du drapeau proposé...";
+          render();
+
+          await ensureMatrix(guess);
+
+          const result = transposeAndCompareMatrices(state.target.matrix, guess.matrix);
+          const exact = guess.code === state.target.code;
+
+          state.guesses.unshift({
+            code: guess.code,
+            name: guess.name,
+            imageData: guess.imageData,
+            exact,
+            newCells: result.newCells,
+            totalMatches: result.totalMatches,
+            newPercent: cellsToPercent(result.newCells),
+            matchPercent: cellsToPercent(result.totalMatches),
+          });
+
+          if (exact) {
+            state.revealed.fill(1);
+            state.gameOver = true;
+            setMessage("Bravo ! C'était " + state.target.name + ".", "success");
+          } else if (result.newCells > 0) {
+            setMessage(cellsToPercent(result.newCells) + "% du drapeau vient d'être révélé.", "success");
+          } else {
+            setMessage("Aucune nouvelle zone commune après normalisation.", "neutral");
+          }
+
+          input.value = "";
+        } catch (error) {
+          console.error(error);
+          setMessage("Impossible de comparer ce drapeau.", "error");
+        } finally {
+          state.loading = false;
+          render();
+        }
+      }
+
+      function transposeAndCompareMatrices(targetMatrix, guessMatrix) {
+        let newCells = 0;
+        let totalMatches = 0;
+
+        for (let y = 0; y < MATRIX_HEIGHT; y += 1) {
+          for (let x = 0; x < MATRIX_WIDTH; x += 1) {
+            const index = y * MATRIX_WIDTH + x;
+
+            if (targetMatrix[index] === guessMatrix[index]) {
+              totalMatches += 1;
+
+              if (state.revealed[index] === 0) {
+                state.revealed[index] = 1;
+                newCells += 1;
+              }
+            }
+          }
+        }
+
+        return { newCells, totalMatches };
+      }
+
+      function cellsToPercent(count) {
+        return Math.round((count / MATRIX_SIZE) * 10000) / 100;
+      }
+
+      function setMessage(text, type) {
+        state.message = text;
+        state.messageType = type || "neutral";
+      }
+
+      function buildRevealedImageData() {
+        const output = new Uint8ClampedArray(MATRIX_SIZE * 4);
+        const source = state.target ? state.target.imageData.data : null;
+
+        for (let i = 0; i < MATRIX_SIZE; i += 1) {
+          const offset = i * 4;
+
+          if (source && state.revealed[i] === 1) {
+            output[offset] = source[offset];
+            output[offset + 1] = source[offset + 1];
+            output[offset + 2] = source[offset + 2];
+            output[offset + 3] = 255;
+          } else {
+            const x = i % MATRIX_WIDTH;
+            const y = Math.floor(i / MATRIX_WIDTH);
+            const checker = (Math.floor(x / 6) + Math.floor(y / 6)) % 2 === 0;
+            const gray = checker ? 224 : 208;
+            output[offset] = gray;
+            output[offset + 1] = gray + 3;
+            output[offset + 2] = gray + 7;
+            output[offset + 3] = 255;
+          }
+        }
+
+        return new ImageData(output, MATRIX_WIDTH, MATRIX_HEIGHT);
+      }
+
+      function drawImageData(canvas, imageData) {
+        canvas.width = MATRIX_WIDTH;
+        canvas.height = MATRIX_HEIGHT;
+        canvas.getContext("2d").putImageData(imageData, 0, 0);
+      }
+
+      function makeCanvas(imageData, className, label) {
+        const canvas = document.createElement("canvas");
+        canvas.className = className;
+        canvas.setAttribute("role", "img");
+        canvas.setAttribute("aria-label", label);
+        drawImageData(canvas, imageData);
+        return canvas;
+      }
+
+      function render() {
+        app.innerHTML = "";
+
+        const shell = document.createElement("main");
+        shell.className = "shell";
+
+        const top = document.createElement("section");
+        top.className = "top";
+
+        const panel = document.createElement("div");
+        panel.className = "card";
+
+        const title = document.createElement("h1");
+        title.textContent = "Devine le drapeau";
+
+        const intro = document.createElement("p");
+        intro.className = "muted";
+        intro.textContent = "Les drapeaux viennent d'internet, sont convertis en matrices, puis leurs couleurs sont normalisées en quelques teintes avant comparaison.";
+
+        const form = document.createElement("form");
+        form.className = "form";
+        form.addEventListener("submit", submitGuess);
+
+        const input = document.createElement("input");
+        input.name = "country";
+        input.type = "text";
+        input.placeholder = "Exemple : Algérie";
+        input.disabled = state.loading || state.gameOver;
+        input.setAttribute("list", "countries");
+        input.autocomplete = "off";
+
+        const button = document.createElement("button");
+        button.type = "submit";
+        button.textContent = state.loading ? "Chargement..." : "Essayer";
+        button.disabled = state.loading || state.gameOver;
+
+        form.append(input, button);
+
+        const datalist = document.createElement("datalist");
+        datalist.id = "countries";
+        for (const country of state.countries) {
+          const option = document.createElement("option");
+          option.value = country.name;
+          datalist.append(option);
+        }
+
+        const message = document.createElement("p");
+        message.id = "message";
+        message.dataset.type = state.messageType;
+        message.textContent = state.message;
+
+        const stats = document.createElement("div");
+        stats.className = "stats";
+        const revealedCount = state.revealed.reduce((sum, value) => sum + value, 0);
+        stats.innerHTML = `
+          <span>${state.countries.length} pays chargés</span>
+          <span>${revealedCount.toLocaleString("fr-FR")} cellules révélées</span>
+          <span>${cellsToPercent(revealedCount)}% visible</span>
+          <span>${state.guesses.length} essai${state.guesses.length > 1 ? "s" : ""}</span>
+        `;
+
+        panel.append(title, intro, form, datalist, message, stats);
+
+        const flagPanel = document.createElement("div");
+        flagPanel.className = "card";
+
+        const flagTitle = document.createElement("h2");
+        flagTitle.textContent = "Drapeau secret";
+
+        const flagCanvas = makeCanvas(
+          buildRevealedImageData(),
+          "flag",
+          "Drapeau secret révélé grâce aux zones communes",
+        );
+
+        flagPanel.append(flagTitle, flagCanvas);
+
+        if (state.gameOver) {
+          const reset = document.createElement("button");
+          reset.className = "secondary";
+          reset.type = "button";
+          reset.textContent = "Nouvelle partie";
+          reset.addEventListener("click", newGame);
+          flagPanel.append(reset);
+        }
+
+        top.append(panel, flagPanel);
+
+        const bottom = document.createElement("section");
+        bottom.className = "bottom";
+
+        const method = document.createElement("div");
+        method.className = "card";
+        method.innerHTML = `
+          <h2>Comparaison des matrices</h2>
+          <p>Chaque drapeau est réduit en matrice ${MATRIX_WIDTH} × ${MATRIX_HEIGHT}. Chaque cellule contient seulement l'id d'une teinte normalisée : rouge, bleu, vert, blanc, jaune, noir, etc.</p>
+          <p>La comparaison se fait ensuite par coordonnées : si secret[y][x] vaut la même teinte que essai[y][x], cette position est révélée.</p>
+          <p class="note">La normalisation évite que deux rouges presque identiques soient considérés comme différents à cause de l'anticrénelage ou des variantes officielles.</p>
+        `;
+
+        const history = document.createElement("div");
+        history.className = "card";
+
+        const historyTitle = document.createElement("h2");
+        historyTitle.textContent = "Essais";
+
+        history.append(historyTitle, renderHistory());
+        bottom.append(method, history);
+
+        shell.append(top, bottom);
+        app.append(shell);
+      }
+
+      function renderHistory() {
+        if (state.guesses.length === 0) {
+          const empty = document.createElement("p");
+          empty.className = "muted";
+          empty.textContent = "Aucun essai pour l'instant.";
+          return empty;
+        }
+
+        const list = document.createElement("div");
+        list.className = "history";
+
+        for (const guess of state.guesses) {
+          const item = document.createElement("article");
+          item.className = "guess";
+
+          const preview = makeCanvas(guess.imageData, "flag small", "Drapeau proposé : " + guess.name);
+
+          const text = document.createElement("div");
+          const title = document.createElement("strong");
+          title.textContent = guess.name;
+
+          const badge = document.createElement("span");
+          badge.className = guess.newCells > 0 || guess.exact ? "badge good" : "badge";
+          badge.textContent = guess.exact
+            ? "Bonne réponse"
+            : "+" + guess.newPercent + "% révélé";
+
+          const detail = document.createElement("small");
+          detail.textContent = guess.matchPercent + "% de correspondance totale avec le drapeau secret.";
+
+          text.append(title, badge, detail);
+          item.append(preview, text);
+          list.append(item);
+        }
+
+        return list;
+      }
+    })();
+  </script>
+</body>
+</html>
