@@ -509,7 +509,6 @@
           }
 
           input.value = "";
-          input.focus();
         } catch (error) {
           console.error(error);
           setMessage("Impossible de comparer ce drapeau.", "error");
@@ -1020,6 +1019,7 @@
 
         shell.append(top, bottom);
         app.append(shell);
+        input.focus();
       }
 
       function renderHistory() {
